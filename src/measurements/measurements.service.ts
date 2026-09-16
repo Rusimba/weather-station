@@ -45,4 +45,12 @@ export class MeasurementsService {
     );
     return true;
   }
+  async history(deviceId: string, limit: number = 200) {
+    const rows = await this.prisma.measurement.findMany({
+      where: { deviceId },
+      orderBy: { recordedAt: 'desc' },
+      take: limit,
+    });
+    return rows.reverse();
+  }
 }
