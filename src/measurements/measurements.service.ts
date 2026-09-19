@@ -1,10 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { MeasurementsGateway } from './measurements.gateway';
 
 @Injectable()
 export class MeasurementsService {
   private readonly logger = new Logger(MeasurementsService.name);
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly gateway: MeasurementsGateway,
+  ) {}
   async save(deviceId: string, temperature: number, humidity: number) {
     if (deviceId == null || deviceId.trim() === '') {
       this.logger.warn('deviceId TROUBLE');
@@ -25,7 +29,7 @@ export class MeasurementsService {
       return false;
     }
     try {
-      await this.prisma.measurement.create({
+      const created = await this.prisma.measurement.create({
         data: {
           recordedAt: new Date(),
           deviceId: deviceId,
@@ -33,6 +37,11 @@ export class MeasurementsService {
           humidity: humidity,
         },
       });
+      this.logger.log(
+        `Saved measurement device=${deviceId} t=${temperature} h=${humidity}`,
+      );
+      this.gateway.broadcastMeasurement(deviceId, created);
+      return created;
     } catch (err) {
       this.logger.error(
         `DB write failed device=${deviceId}: ${(err as Error).message}`,
@@ -40,10 +49,6 @@ export class MeasurementsService {
       );
       return false;
     }
-    this.logger.log(
-      `Saved measurement device=${deviceId} t=${temperature} h=${humidity}`,
-    );
-    return true;
   }
   async history(deviceId: string, limit: number = 200) {
     const rows = await this.prisma.measurement.findMany({
