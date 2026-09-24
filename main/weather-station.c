@@ -4,11 +4,15 @@
 #include "freertos/queue.h"
 #include "dht.h"
 #include "esp_log.h"
+#include "stdint.h"
 #include "wifi.h"
 #include "mqtt.h"
 #include "driver/i2c_master.h"
 
-
+#define BME280_OSRS_H 0b001
+#define BME280_OSRS_P 0b001
+#define BME280_MODE_FORCED 0b01
+#define BME280_OSRS_T 0b001
 static const char *TAG = "weather";
 typedef struct {
     float temperature;
@@ -81,7 +85,7 @@ void app_main(void)
     i2c_master_dev_handle_t dev_handle;
     uint8_t reg = 0xD0;
     uint8_t chip_id;
-    i2c_master_bus_add_device( bus_handle,&dev_config, &dev_handle);
+    ESP_ERROR_CHECK(i2c_master_bus_add_device( bus_handle,&dev_config, &dev_handle));
     esp_err_t  res = i2c_master_transmit_receive(dev_handle, &reg, 1, &chip_id, 1, 100);
     if (res==ESP_OK){
             ESP_LOGI(TAG,"REG =  %02x ",chip_id);
@@ -89,6 +93,21 @@ void app_main(void)
     else{
         ESP_LOGI(TAG,"ERROR =  %02x ",res);
     }
+    uint8_t ctrl_hum = BME280_OSRS_H;
+    uint8_t ctrl_meas = (BME280_OSRS_T<<5)|(BME280_OSRS_P<<2) | BME280_MODE_FORCED;
+    uint8_t buffer[4] = {0xF2,ctrl_hum,0xF4,ctrl_meas};
+    ESP_ERROR_CHECK(i2c_master_transmit(dev_handle,buffer,4,500));
+     vTaskDelay(pdMS_TO_TICKS(50)); 
+    uint8_t start_reg = 0xF2;
+    uint8_t read_arr[3];
+    esp_err_t  read_res = i2c_master_transmit_receive(dev_handle, &start_reg, 1, read_arr, 3, 100);
+    if (read_res==ESP_OK){
+            ESP_LOG_BUFFER_HEX(TAG, read_arr, 3);
+        }
+    else{
+        ESP_LOGI(TAG,"ERROR READ ADDRES registor ");
+    }
+    
     wifi_init_sta();
     mqtt_init_publisher();
     s_queue_desc = xQueueCreate(30, sizeof(measurement_t));
