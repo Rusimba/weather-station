@@ -8,6 +8,7 @@
 #include "wifi.h"
 #include "mqtt.h"
 #include "driver/i2c_master.h"
+#include "inttypes.h"
 
 #define BME280_OSRS_H 0b001
 #define BME280_OSRS_P 0b001
@@ -107,7 +108,37 @@ void app_main(void)
     else{
         ESP_LOGI(TAG,"ERROR READ ADDRES registor ");
     }
-    
+    uint8_t data_reg = 0xF7;
+    uint8_t data[8];
+    esp_err_t  data_res = i2c_master_transmit_receive(dev_handle, &data_reg, 1, data, 8, 100);
+    if (data_res==ESP_OK){
+            ESP_LOG_BUFFER_HEX(TAG, data, 8);
+            int32_t raw_t= ((int32_t)data[3]<<12) |((int32_t)data[4]<<4 )|(data[5]>>4);
+            int32_t raw_p= ((int32_t)data[0]<<12) |((int32_t)data[1]<<4 )|(data[2]>>4);
+            uint16_t raw_h = ((uint16_t)data[6]<<8) |((uint16_t)data[7] );
+            ESP_LOGI(TAG,"RAW_T = %" PRId32,raw_t);
+            ESP_LOGI(TAG,"RAW_P = %" PRId32,raw_p);
+            ESP_LOGI(TAG,"RAW_H = %" PRId16,raw_h);
+        }
+    else{
+        ESP_LOGI(TAG,"ERROR READ MEANSURE REGISTOR");
+    }
+    uint8_t calib_reg = 0x88;
+    uint8_t calib[8];
+    esp_err_t  calib_res = i2c_master_transmit_receive(dev_handle, &calib_reg, 1, calib, 8, 100);
+    if (calib_res==ESP_OK){
+            ESP_LOG_BUFFER_HEX(TAG, calib, 8);
+            uint16_t  dig_T1 = ((unsigned short int)calib[1]<<8)|(calib[0] );
+            int16_t dig_T2 = (int16_t)(((uint16_t)calib[3] << 8) | calib[2]);
+            int16_t dig_T3 = (int16_t)(((uint16_t)calib[5] << 8) | calib[4]);
+            ESP_LOGI(TAG,"dig_T1 = %" PRIu16,dig_T1);
+            ESP_LOGI(TAG,"dig_T2 = %" PRId16,dig_T2);
+            ESP_LOGI(TAG,"dig_T3 = %" PRId16,dig_T3);
+        }
+    else{
+        ESP_LOGI(TAG,"ERROR READ MEANSURE REGISTOR");
+    }
+
     wifi_init_sta();
     mqtt_init_publisher();
     s_queue_desc = xQueueCreate(30, sizeof(measurement_t));
