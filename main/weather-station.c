@@ -14,7 +14,15 @@
 #define BME280_OSRS_P 0b001
 #define BME280_MODE_FORCED 0b01
 #define BME280_OSRS_T 0b001
+
 static const char *TAG = "weather";
+
+
+int32_t t_fine;
+uint16_t dig_T1;
+int16_t dig_T2;
+int16_t dig_T3;
+int32_t BME280_compensate_T_int32(int32_t adc_T);
 typedef struct {
     float temperature;
     float humidity;
@@ -57,6 +65,14 @@ void publisher_task(void *pvParameters){
             ESP_LOGE(TAG, "NO QUEUE");
         }
     }
+}
+int32_t BME280_compensate_T_int32(int32_t adc_T) {
+        int32_t var1, var2, T;
+        var1 = ((((adc_T>>3) - ((int32_t)dig_T1<<1))) * ((int32_t)dig_T2)) >> 11;
+        var2 = (((((adc_T>>4) - ((int32_t)dig_T1)) * ((adc_T>>4) - ((int32_t)dig_T1))) >> 12) * ((int32_t)dig_T3)) >> 14;
+        t_fine = var1 + var2;
+        T = (t_fine * 5 + 128) >> 8; 
+        return T; 
 }
 void app_main(void)
 {
@@ -108,6 +124,21 @@ void app_main(void)
     else{
         ESP_LOGI(TAG,"ERROR READ ADDRES registor ");
     }
+    uint8_t calib_reg = 0x88;
+    uint8_t calib[8];
+    esp_err_t  calib_res = i2c_master_transmit_receive(dev_handle, &calib_reg, 1, calib, 8, 100);
+    if (calib_res==ESP_OK){
+            ESP_LOG_BUFFER_HEX(TAG, calib, 8);
+            dig_T1 = ((unsigned short int)calib[1]<<8)|(calib[0] );
+            dig_T2 = (int16_t)(((uint16_t)calib[3] << 8) | calib[2]);
+            dig_T3 = (int16_t)(((uint16_t)calib[5] << 8) | calib[4]);
+            ESP_LOGI(TAG,"dig_T1 = %" PRIu16,dig_T1);
+            ESP_LOGI(TAG,"dig_T2 = %" PRId16,dig_T2);
+            ESP_LOGI(TAG,"dig_T3 = %" PRId16,dig_T3);
+        }
+    else{
+        ESP_LOGI(TAG,"ERROR READ MEANSURE REGISTOR");
+    }
     uint8_t data_reg = 0xF7;
     uint8_t data[8];
     esp_err_t  data_res = i2c_master_transmit_receive(dev_handle, &data_reg, 1, data, 8, 100);
@@ -119,26 +150,14 @@ void app_main(void)
             ESP_LOGI(TAG,"RAW_T = %" PRId32,raw_t);
             ESP_LOGI(TAG,"RAW_P = %" PRId32,raw_p);
             ESP_LOGI(TAG,"RAW_H = %" PRId16,raw_h);
+            int32_t temp_x100 = BME280_compensate_T_int32(raw_t);
+            ESP_LOGI(TAG, "t_fine = %" PRId32, t_fine);
+            ESP_LOGI(TAG, "Temperature: %.2f C", (float)temp_x100 / 100.0);
         }
     else{
         ESP_LOGI(TAG,"ERROR READ MEANSURE REGISTOR");
     }
-    uint8_t calib_reg = 0x88;
-    uint8_t calib[8];
-    esp_err_t  calib_res = i2c_master_transmit_receive(dev_handle, &calib_reg, 1, calib, 8, 100);
-    if (calib_res==ESP_OK){
-            ESP_LOG_BUFFER_HEX(TAG, calib, 8);
-            uint16_t  dig_T1 = ((unsigned short int)calib[1]<<8)|(calib[0] );
-            int16_t dig_T2 = (int16_t)(((uint16_t)calib[3] << 8) | calib[2]);
-            int16_t dig_T3 = (int16_t)(((uint16_t)calib[5] << 8) | calib[4]);
-            ESP_LOGI(TAG,"dig_T1 = %" PRIu16,dig_T1);
-            ESP_LOGI(TAG,"dig_T2 = %" PRId16,dig_T2);
-            ESP_LOGI(TAG,"dig_T3 = %" PRId16,dig_T3);
-        }
-    else{
-        ESP_LOGI(TAG,"ERROR READ MEANSURE REGISTOR");
-    }
-
+   
     wifi_init_sta();
     mqtt_init_publisher();
     s_queue_desc = xQueueCreate(30, sizeof(measurement_t));
