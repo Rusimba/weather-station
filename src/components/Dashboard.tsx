@@ -6,6 +6,7 @@ export interface Measurement{
     deviceId: string;
     temperature: number;
     humidity: number;
+    pressure: number | null
     recordedAt: string;
     measuredAt: string | null;
 }
@@ -54,7 +55,8 @@ export function Dashboard() {
   }, []);
 
   return (
-    <LineChart width={1000} height={800} data={measurements}>
+      <div>
+    <LineChart width={1000} height={400} data={measurements}>
     <CartesianGrid strokeDasharray="3 3" />
     <Tooltip />
     <Legend />
@@ -63,5 +65,14 @@ export function Dashboard() {
   <Line type="monotone" dataKey="temperature" stroke="#8884d8" />
   <Line type="monotone" dataKey="humidity" stroke="#82ca9d"  />
 </LineChart>
+ <LineChart width={1000} height={400} data={measurements}>
+      <CartesianGrid strokeDasharray="3 3" />
+      <Tooltip />
+      <Legend />
+      <XAxis dataKey="recordedAt" tickFormatter={formatXAxis} />
+      <YAxis domain={['auto', 'auto']} />
+      <Line type="monotone" dataKey="pressure" stroke="#ff7300" />
+    </LineChart>
+</div>
   );
 }
