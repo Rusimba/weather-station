@@ -1,0 +1,73 @@
+import { Injectable, Logger } from '@nestjs/common';
+import { PrismaService } from 'src/prisma/prisma.service';
+import { MeasurementsGateway } from './measurements.gateway';
+
+@Injectable()
+export class MeasurementsService {
+  private readonly logger = new Logger(MeasurementsService.name);
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly gateway: MeasurementsGateway,
+  ) {}
+  async save(
+    deviceId: string,
+    temperature: number,
+    humidity: number,
+    pressure: number | null,
+  ) {
+    if (deviceId == null || deviceId.trim() === '') {
+      this.logger.warn('deviceId TROUBLE');
+      return false;
+    }
+    if (
+      Number.isFinite(temperature) == false ||
+      temperature < -80 ||
+      temperature > 80
+    ) {
+      this.logger.warn(
+        `Invalid temperature ${temperature} for device=${deviceId}`,
+      );
+      return false;
+    }
+    if (Number.isFinite(humidity) == false || humidity < 0 || humidity > 101) {
+      this.logger.warn(`Invalid humidity ${humidity} for device=${deviceId}`);
+      return false;
+    }
+    if (pressure !== undefined && pressure !== null) {
+      if (!Number.isFinite(pressure) || pressure < 300 || pressure > 1100) {
+        this.logger.warn(`Invalid pressure ${pressure} for device=${deviceId}`);
+        return false;
+      }
+    }
+    try {
+      const created = await this.prisma.measurement.create({
+        data: {
+          recordedAt: new Date(),
+          deviceId: deviceId,
+          temperature: temperature,
+          humidity: humidity,
+          pressure: pressure,
+        },
+      });
+      this.logger.log(
+        `Saved measurement device=${deviceId} t=${temperature} h=${humidity}`,
+      );
+      this.gateway.broadcastMeasurement(deviceId, created);
+      return created;
+    } catch (err) {
+      this.logger.error(
+        `DB write failed device=${deviceId}: ${(err as Error).message}`,
+        (err as Error).stack,
+      );
+      return false;
+    }
+  }
+  async history(deviceId: string, limit: number = 200) {
+    const rows = await this.prisma.measurement.findMany({
+      where: { deviceId },
+      orderBy: { recordedAt: 'desc' },
+      take: limit,
+    });
+    return rows.reverse();
+  }
+}
