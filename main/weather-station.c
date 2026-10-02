@@ -33,6 +33,7 @@ void sampler_task(void *pvParameters){
             measurement_t measurement = {
                 .humidity = humidity,
                 .temperature = temperature,
+                .pressure = pressure,
             };
             BaseType_t res =xQueueSend(s_queue_desc,&measurement,0);
             if (res == pdTRUE){
@@ -52,7 +53,7 @@ void publisher_task(void *pvParameters){
     {
         BaseType_t res = xQueueReceive(s_queue_desc,&measurement,portMAX_DELAY);
         if (res == pdTRUE){
-        mqtt_publisher_data(measurement.temperature, measurement.humidity);
+        mqtt_publisher_data(measurement.temperature, measurement.humidity,measurement.pressure);
         ESP_LOGI(TAG, "Queued for publish");
         }else {
             ESP_LOGE(TAG, "NO QUEUE");
@@ -78,6 +79,6 @@ void app_main(void)
     wifi_init_sta();
     mqtt_init_publisher();
     s_queue_desc = xQueueCreate(30, sizeof(measurement_t));
-    xTaskCreate(sampler_task,"sampler",2048,NULL,2,NULL);
+    xTaskCreate(sampler_task,"sampler",4096,NULL,2,NULL);
     xTaskCreate(publisher_task,"publisher",4096,NULL,1,NULL);
 }

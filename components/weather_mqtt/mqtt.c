@@ -6,9 +6,9 @@
 static esp_mqtt_client_handle_t s_mqtt_client;
 static const char *TAG = "weather";
 
-esp_err_t mqtt_publisher_data(float temp, float humidity){
-    char buffer[64];
-    snprintf(buffer, sizeof(buffer), "{\"temperature\":%.1f,\"humidity\":%.1f}", temp, humidity );
+esp_err_t mqtt_publisher_data(float temp, float humidity, float pressure){
+    char buffer[128];
+    snprintf(buffer, sizeof(buffer), "{\"temperature\":%.1f,\"humidity\":%.1f,\"pressure\":%.1f}", temp, humidity,pressure );
     int result= esp_mqtt_client_publish(s_mqtt_client, MQTT_TOPIC, buffer, 0, 0, 1);
     if (result < 0){
         ESP_LOGE(TAG, "Failed to Publish to MQTT, publish_id: %d", result);
