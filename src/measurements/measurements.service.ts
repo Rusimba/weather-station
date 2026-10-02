@@ -9,7 +9,12 @@ export class MeasurementsService {
     private readonly prisma: PrismaService,
     private readonly gateway: MeasurementsGateway,
   ) {}
-  async save(deviceId: string, temperature: number, humidity: number) {
+  async save(
+    deviceId: string,
+    temperature: number,
+    humidity: number,
+    pressure: number | null,
+  ) {
     if (deviceId == null || deviceId.trim() === '') {
       this.logger.warn('deviceId TROUBLE');
       return false;
@@ -28,6 +33,12 @@ export class MeasurementsService {
       this.logger.warn(`Invalid humidity ${humidity} for device=${deviceId}`);
       return false;
     }
+    if (pressure !== undefined && pressure !== null) {
+      if (!Number.isFinite(pressure) || pressure < 300 || pressure > 1100) {
+        this.logger.warn(`Invalid pressure ${pressure} for device=${deviceId}`);
+        return false;
+      }
+    }
     try {
       const created = await this.prisma.measurement.create({
         data: {
@@ -35,6 +46,7 @@ export class MeasurementsService {
           deviceId: deviceId,
           temperature: temperature,
           humidity: humidity,
+          pressure: pressure,
         },
       });
       this.logger.log(

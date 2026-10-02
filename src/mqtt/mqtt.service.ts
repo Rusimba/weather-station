@@ -35,6 +35,7 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
           parts[2],
           parse.temperature,
           parse.humidity,
+          parse.pressure,
         );
       } catch (err) {
         this.logger.error(err);
