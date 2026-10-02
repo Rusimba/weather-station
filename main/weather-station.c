@@ -9,23 +9,15 @@
 #include "mqtt.h"
 #include "driver/i2c_master.h"
 #include "inttypes.h"
-
-#define BME280_OSRS_H 0b001
-#define BME280_OSRS_P 0b001
-#define BME280_MODE_FORCED 0b01
-#define BME280_OSRS_T 0b001
+#include "bme280.h"
 
 static const char *TAG = "weather";
 
 
-int32_t t_fine;
-uint16_t dig_T1;
-int16_t dig_T2;
-int16_t dig_T3;
-int32_t BME280_compensate_T_int32(int32_t adc_T);
 typedef struct {
     float temperature;
     float humidity;
+    float pressure; 
 }measurement_t;
 
 
@@ -35,7 +27,8 @@ void sampler_task(void *pvParameters){
     {
         float humidity;
         float temperature;
-        esp_err_t err = dht_read_float_data(DHT_TYPE_DHT11, GPIO_NUM_4, &humidity, &temperature);
+        float pressure;
+        esp_err_t err = bme280_read(&humidity, &temperature, &pressure);
         if (err == ESP_OK){
             measurement_t measurement = {
                 .humidity = humidity,
@@ -43,7 +36,7 @@ void sampler_task(void *pvParameters){
             };
             BaseType_t res =xQueueSend(s_queue_desc,&measurement,0);
             if (res == pdTRUE){
-            ESP_LOGI(TAG, "Temp: %.1f C, Humidity: %.1f %%", temperature, humidity);
+            ESP_LOGI(TAG, "Temp: %.1f C, Humidity: %.1f %%, Pressure: %.1f hPa", temperature, humidity, pressure);
             }else{
                 ESP_LOGE(TAG, "Failed to add queue");
             }
@@ -66,14 +59,6 @@ void publisher_task(void *pvParameters){
         }
     }
 }
-int32_t BME280_compensate_T_int32(int32_t adc_T) {
-        int32_t var1, var2, T;
-        var1 = ((((adc_T>>3) - ((int32_t)dig_T1<<1))) * ((int32_t)dig_T2)) >> 11;
-        var2 = (((((adc_T>>4) - ((int32_t)dig_T1)) * ((adc_T>>4) - ((int32_t)dig_T1))) >> 12) * ((int32_t)dig_T3)) >> 14;
-        t_fine = var1 + var2;
-        T = (t_fine * 5 + 128) >> 8; 
-        return T; 
-}
 void app_main(void)
 {
     i2c_master_bus_config_t bus_config =   {
@@ -84,79 +69,11 @@ void app_main(void)
     .glitch_ignore_cnt = 7,
     .flags.enable_internal_pullup = true,
     };
-    i2c_device_config_t dev_config = {
-    .dev_addr_length = I2C_ADDR_BIT_LEN_7,
-    .device_address = 0x76,
-    .scl_speed_hz = 100000,
-    };
+
     i2c_master_bus_handle_t bus_handle;
     ESP_ERROR_CHECK(i2c_new_master_bus(&bus_config, &bus_handle));
-    uint8_t address = 0x08;
-    while (address <= 0x77){
-        esp_err_t  res = i2c_master_probe( bus_handle,  address,  50);
-        if (res==ESP_OK){
-            ESP_LOGI(TAG,"Found address: %02x ",address);
-        }
-        address++;
-    }
-    i2c_master_dev_handle_t dev_handle;
-    uint8_t reg = 0xD0;
-    uint8_t chip_id;
-    ESP_ERROR_CHECK(i2c_master_bus_add_device( bus_handle,&dev_config, &dev_handle));
-    esp_err_t  res = i2c_master_transmit_receive(dev_handle, &reg, 1, &chip_id, 1, 100);
-    if (res==ESP_OK){
-            ESP_LOGI(TAG,"REG =  %02x ",chip_id);
-        }
-    else{
-        ESP_LOGI(TAG,"ERROR =  %02x ",res);
-    }
-    uint8_t ctrl_hum = BME280_OSRS_H;
-    uint8_t ctrl_meas = (BME280_OSRS_T<<5)|(BME280_OSRS_P<<2) | BME280_MODE_FORCED;
-    uint8_t buffer[4] = {0xF2,ctrl_hum,0xF4,ctrl_meas};
-    ESP_ERROR_CHECK(i2c_master_transmit(dev_handle,buffer,4,500));
-     vTaskDelay(pdMS_TO_TICKS(50)); 
-    uint8_t start_reg = 0xF2;
-    uint8_t read_arr[3];
-    esp_err_t  read_res = i2c_master_transmit_receive(dev_handle, &start_reg, 1, read_arr, 3, 100);
-    if (read_res==ESP_OK){
-            ESP_LOG_BUFFER_HEX(TAG, read_arr, 3);
-        }
-    else{
-        ESP_LOGI(TAG,"ERROR READ ADDRES registor ");
-    }
-    uint8_t calib_reg = 0x88;
-    uint8_t calib[8];
-    esp_err_t  calib_res = i2c_master_transmit_receive(dev_handle, &calib_reg, 1, calib, 8, 100);
-    if (calib_res==ESP_OK){
-            ESP_LOG_BUFFER_HEX(TAG, calib, 8);
-            dig_T1 = ((unsigned short int)calib[1]<<8)|(calib[0] );
-            dig_T2 = (int16_t)(((uint16_t)calib[3] << 8) | calib[2]);
-            dig_T3 = (int16_t)(((uint16_t)calib[5] << 8) | calib[4]);
-            ESP_LOGI(TAG,"dig_T1 = %" PRIu16,dig_T1);
-            ESP_LOGI(TAG,"dig_T2 = %" PRId16,dig_T2);
-            ESP_LOGI(TAG,"dig_T3 = %" PRId16,dig_T3);
-        }
-    else{
-        ESP_LOGI(TAG,"ERROR READ MEANSURE REGISTOR");
-    }
-    uint8_t data_reg = 0xF7;
-    uint8_t data[8];
-    esp_err_t  data_res = i2c_master_transmit_receive(dev_handle, &data_reg, 1, data, 8, 100);
-    if (data_res==ESP_OK){
-            ESP_LOG_BUFFER_HEX(TAG, data, 8);
-            int32_t raw_t= ((int32_t)data[3]<<12) |((int32_t)data[4]<<4 )|(data[5]>>4);
-            int32_t raw_p= ((int32_t)data[0]<<12) |((int32_t)data[1]<<4 )|(data[2]>>4);
-            uint16_t raw_h = ((uint16_t)data[6]<<8) |((uint16_t)data[7] );
-            ESP_LOGI(TAG,"RAW_T = %" PRId32,raw_t);
-            ESP_LOGI(TAG,"RAW_P = %" PRId32,raw_p);
-            ESP_LOGI(TAG,"RAW_H = %" PRId16,raw_h);
-            int32_t temp_x100 = BME280_compensate_T_int32(raw_t);
-            ESP_LOGI(TAG, "t_fine = %" PRId32, t_fine);
-            ESP_LOGI(TAG, "Temperature: %.2f C", (float)temp_x100 / 100.0);
-        }
-    else{
-        ESP_LOGI(TAG,"ERROR READ MEANSURE REGISTOR");
-    }
+    ESP_ERROR_CHECK(bme280_init(bus_handle));
+    
    
     wifi_init_sta();
     mqtt_init_publisher();
