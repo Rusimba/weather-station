@@ -11,6 +11,12 @@ import { MeasurementsGateway } from './measurements/measurements.gateway';
 @Module({
   imports: [],
   controllers: [AppController, MeasurementsController],
-  providers: [AppService, MqttService, MeasurementsService, PrismaService, MeasurementsGateway],
+  providers: [
+    AppService,
+    MqttService,
+    MeasurementsService,
+    PrismaService,
+    MeasurementsGateway,
+  ],
 })
 export class AppModule {}
