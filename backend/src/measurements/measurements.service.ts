@@ -13,7 +13,7 @@ export class MeasurementsService {
     deviceId: string,
     temperature: number,
     humidity: number,
-    pressure: number | null,
+    pressure: number,
   ) {
     if (deviceId == null || deviceId.trim() === '') {
       this.logger.warn('deviceId TROUBLE');
@@ -33,11 +33,9 @@ export class MeasurementsService {
       this.logger.warn(`Invalid humidity ${humidity} for device=${deviceId}`);
       return false;
     }
-    if (pressure !== undefined && pressure !== null) {
-      if (!Number.isFinite(pressure) || pressure < 300 || pressure > 1100) {
-        this.logger.warn(`Invalid pressure ${pressure} for device=${deviceId}`);
-        return false;
-      }
+    if (!Number.isFinite(pressure) || pressure < 300 || pressure > 1100) {
+      this.logger.warn(`Invalid pressure ${pressure} for device=${deviceId}`);
+      return false;
     }
     try {
       const created = await this.prisma.measurement.create({
@@ -50,9 +48,15 @@ export class MeasurementsService {
         },
       });
       this.logger.log(
-        `Saved measurement device=${deviceId} t=${temperature} h=${humidity}`,
+        `Saved measurement device=${deviceId} t=${temperature} h=${humidity} p=${pressure}`,
       );
-      this.gateway.broadcastMeasurement(deviceId, created);
+      try {
+        this.gateway.broadcastMeasurement(deviceId, created);
+      } catch (err) {
+        this.logger.error(
+          `Saved measurement in BD but Failed save broadcastMeasurement device=${deviceId}:${(err as Error).message}`,
+        );
+      }
       return created;
     } catch (err) {
       this.logger.error(

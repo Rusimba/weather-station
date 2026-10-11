@@ -38,7 +38,7 @@ export class MqttService implements OnModuleInit, OnModuleDestroy {
           parse.pressure,
         );
       } catch (err) {
-        this.logger.error(err);
+        this.logger.error(err.message);
       }
     });
     this.client.on('error', (err) => {
